@@ -28,6 +28,7 @@
 
     <main class="container mt-4">
         
+        <!-- SECCIÓN DE FILTROS -->
         <div class="card mb-4">
             <div class="card-body">
                 <h5 class="card-title">Filtros de Búsqueda</h5>
@@ -40,12 +41,14 @@
             </div>
         </div>
 
+        <!-- SECCIÓN DE KPIS -->
         <div class="row mb-4 g-4">
             <div class="col-md-4"><div class="card p-3 kpi-card"><div class="d-flex justify-content-between align-items-center"><div><div class="value text-primary">{{ kpis.total }}</div><div class="label">Total de Sentencias (Filtradas)</div></div><i class="bi bi-file-earmark-text icon"></i></div></div></div>
             <div class="col-md-4"><div class="card p-3 kpi-card"><div class="d-flex justify-content-between align-items-center"><div><div class="value text-success">{{ kpis.favorables }}</div><div class="label">Casos Favorables</div></div><i class="bi bi-check-circle icon"></i></div></div></div>
             <div class="col-md-4"><div class="card p-3 kpi-card"><div class="d-flex justify-content-between align-items-center"><div><div class="value text-info">{{ kpis.porcentaje }}%</div><div class="label">Tasa de Ganancia de Causa</div></div><i class="bi bi-pie-chart icon"></i></div></div></div>
         </div>
         
+        <!-- SECCIÓN DE ANÁLISIS DE TEXTO -->
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card">
@@ -56,6 +59,7 @@
             </div>
         </div>
         
+        <!-- GRÁFICO DE TENDENCIAS -->
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card">
@@ -66,11 +70,13 @@
             </div>
         </div>
 
+        <!-- GRÁFICOS DE PASTEL Y BARRAS -->
         <div class="row g-4 mb-4">
             <div class="col-lg-5"><div class="card"><div class="card-body d-flex align-items-center justify-content-center">{{ pie_chart_div | safe }}</div></div></div>
             <div class="col-lg-7"><div class="card"><div class="card-body">{{ keyword_chart_div | safe }}</div></div></div>
         </div>
 
+        <!-- MAPA -->
         <div class="row">
             <div class="col-12">
                 <div class="card">
