@@ -83,26 +83,20 @@ def index():
     if selected_año != 'Todos':
         df_filtrado = df_filtrado[df_filtrado['Año'] == int(selected_año)]
     
+    # Llamamos a la función que genera los gráficos y KPIs
     kpis, pie_chart_div, keyword_chart_div, map_div = generar_graficos_filtrados(df_filtrado)
         
-    # --- TEXTO ANALÍTICO PROFESIONAL PARA TESIS ---
+    # El texto del análisis se genera aquí, en la función principal
     texto_analitico = f"""
         <h5 class="card-title mb-3">Análisis de Hallazgos Jurisprudenciales</h5>
-        
         <h6>I. Introducción y Metodología</h6>
-        <p class="card-text small">El presente estudio analiza un corpus de <strong>{len(df_global)} sentencias</strong> emitidas por la SCJ (2011-2023) en materia laboral con mujeres como demandantes. La metodología empleó la extracción automatizada de texto y técnicas de Procesamiento de Lenguaje Natural (NLP) para la clasificación de decisiones y el análisis temático.</p>
-        
+        <p class="card-text small">El presente estudio analiza un corpus de <strong>{len(df_global)} sentencias</strong> de la SCJ (2011-2023) en materia laboral con mujeres como demandantes. La metodología empleó la extracción automatizada de texto y técnicas de Procesamiento de Lenguaje Natural (NLP) para la clasificación de decisiones y el análisis temático.</p>
         <h6>II. Análisis Cuantitativo de Resultados</h6>
         <p class="card-text small">De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se observa una notoria tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>. Es fundamental matizar que una porción considerable de estas victorias se materializa por la desestimación de recursos por razones procesales (inadmisibilidad, caducidad), consolidando así decisiones de instancias inferiores.</p>
-        
         <h6>III. Análisis Cualitativo del Discurso Judicial</h6>
         <p class="card-text small">El análisis de frecuencia de conceptos revela una clara <strong>predominancia del paradigma jurídico-laboral tradicional</strong>. La argumentación se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una incidencia consistentemente baja de terminología de género explícita a lo largo de los años.</p>
-
-        <h6>IV. Conclusión e Hipótesis</h6>
-        <p class="card-text small">Los datos presentan una dualidad: una alta eficacia judicial a favor de las mujeres, que coexiste con una baja visibilidad de un discurso de género explícito. La protección se otorga en base al rol de "trabajadora", abriendo la interrogante para futuras investigaciones sobre la aplicación implícita de un enfoque de género.</p>
     """
     
-    # Opciones para los filtros
     opciones_depto = ['Todos'] + sorted(df_global['Departamento_Judicial'].dropna().unique().tolist())
     opciones_resultado = ['Todos', 'Favorable', 'Desfavorable', 'Mixto / Otro']
     opciones_derecho = ['Todos'] + sorted(df_global['Tipo_Derecho'].dropna().unique().tolist())
@@ -151,12 +145,13 @@ def generar_graficos_filtrados(df_filtrado):
     conteo_demarcaciones.dropna(subset=['lat', 'lon'], inplace=True)
     map_div = "<h6>No hay datos geográficos para esta selección.</h6>"
     if not conteo_demarcaciones.empty:
-        # ===== ¡LA CORRECCIÓN ESTÁ AQUÍ! Volvemos a scatter_mapbox =====
         map_fig = px.scatter_mapbox(conteo_demarcaciones, lat="lat", lon="lon", size="Cantidad", color="Cantidad", hover_name="Departamento", hover_data={"lat": False, "lon": False, "Cantidad": True}, color_continuous_scale=px.colors.sequential.Plasma, size_max=50, title="Distribución Geográfica de Casos")
         map_fig.update_layout(mapbox_style="carto-positron", mapbox_center_lat=18.7357, mapbox_center_lon=-70.1627, mapbox_zoom=7.5, margin={"r":0,"t":40,"l":0,"b":0}, title_x=0.5)
         map_div = map_fig.to_html(full_html=False)
         
-    return kpis, pie_chart_div, keyword_chart_div, map_div, texto_analitico
+    # ===== ¡LA CORRECCIÓN ESTÁ AQUÍ! =====
+    # Esta función ahora devuelve solo los 4 elementos que crea.
+    return kpis, pie_chart_div, keyword_chart_div, map_div
 
 if __name__ == '__main__':
     app.run(debug=True)
