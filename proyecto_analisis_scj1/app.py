@@ -15,20 +15,14 @@ app = Flask(__name__)
 
 # --- CONFIGURACIÓN Y CARGA DE DATOS DESDE LA BASE DE DATOS ---
 db_engine = None
-df_global = pd.DataFrame() # Creamos un DataFrame vacío por si falla la conexión
+df_global = pd.DataFrame()
 
 try:
-    # Lee la URL desde la variable de entorno que configuraremos en Render
     DATABASE_URL = os.environ.get('DATABASE_URL')
-    
     if DATABASE_URL:
-        # Creamos el motor de conexión a la base de datos
         db_engine = create_engine(DATABASE_URL)
-        
-        # Leemos todos los datos de la tabla 'sentencias' una sola vez al iniciar
         df_global = pd.read_sql("SELECT * FROM sentencias", db_engine)
         
-        # Preparamos las columnas que necesitamos para los filtros y gráficos
         df_global['Año'] = pd.to_numeric(df_global['Año'], errors='coerce').astype('Int64')
         def categorizar_resultado(resultado):
             if 'Favorable' in str(resultado): return 'Favorable'
@@ -37,13 +31,10 @@ try:
         df_global['Categoria_Resultado'] = df_global['Resultado_Causa'].apply(categorizar_resultado)
         print(">>> Conexión a la BD y carga de datos inicial exitosa.")
     else:
-        # Esto se mostrará en los logs de Render si la variable no está configurada
         print(">>> ERROR CRÍTICO: La variable de entorno DATABASE_URL no está definida.")
-
 except Exception as e:
     print(f">>> ERROR AL CONECTAR O CARGAR DATOS DESDE LA BASE DE DATOS: {e}")
 
-# Diccionario de coordenadas
 coordenadas_rd = {
     "Distrito Nacional": {"lat": 18.4861, "lon": -69.9312}, "Santiago": {"lat": 19.4517, "lon": -70.6970},
     "Santo Domingo": {"lat": 18.5001, "lon": -69.8887}, "La Vega": {"lat": 19.2240, "lon": -70.5287},
@@ -98,12 +89,8 @@ def index():
     # Texto de Análisis
     texto_analitico = f"""
         <h5 class="card-title mb-3">Análisis de Hallazgos Jurisprudenciales</h5>
-        <h6>I. Introducción y Metodología</h6>
         <p class="card-text small">El presente estudio analiza un corpus de <strong>{len(df_global)} sentencias</strong> de la SCJ (2011-2023). De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se detallan los siguientes patrones.</p>
-        <h6>II. Análisis Cuantitativo de Resultados</h6>
-        <p class="card-text small">Se observa una notoria y consistente tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong> a favor de la trabajadora, consolidando victorias de instancias inferiores.</p>
-        <h6>III. Análisis Cualitativo del Discurso Judicial</h6>
-        <p class="card-text small">El análisis de frecuencia de conceptos y de normativas citadas revela una clara <strong>predominancia del paradigma jurídico-laboral tradicional</strong>, con una baja incidencia de terminología de género explícita a lo largo de los años.</p>
+        <p class="card-text small">Se observa una tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>. La argumentación jurídica se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una baja incidencia de terminología de género explícita.</p>
     """
     
     # Opciones para los filtros
@@ -154,7 +141,9 @@ def generar_graficos_filtrados(df_filtrado):
     conteo_demarcaciones.dropna(subset=['lat', 'lon'], inplace=True)
     map_div = "<h6>No hay datos geográficos para esta selección.</h6>"
     if not conteo_demarcaciones.empty:
-        map_fig = px.scatter_map(conteo_demarcaciones, lat="lat", lon="lon", size="Cantidad", color="Cantidad", hover_name="Departamento", hover_data={"lat": False, "lon": False, "Cantidad": True}, color_continuous_scale=px.colors.sequential.Plasma, size_max=50, title="Distribución Geográfica de Casos")
+        # ===== ¡AQUÍ ESTÁ LA CORRECCIÓN! =====
+        # Usamos scatter_mapbox, que es más estable
+        map_fig = px.scatter_mapbox(conteo_demarcaciones, lat="lat", lon="lon", size="Cantidad", color="Cantidad", hover_name="Departamento", hover_data={"lat": False, "lon": False, "Cantidad": True}, color_continuous_scale=px.colors.sequential.Plasma, size_max=50, title="Distribución Geográfica de Casos")
         map_fig.update_layout(mapbox_style="carto-positron", mapbox_center_lat=18.7357, mapbox_center_lon=-70.1627, mapbox_zoom=7.5, margin={"r":0,"t":40,"l":0,"b":0}, title_x=0.5)
         map_div = map_fig.to_html(full_html=False)
         
