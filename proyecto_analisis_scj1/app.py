@@ -5,6 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sqlalchemy import create_engine
+import warnings
+
+# Ignoramos advertencias de Plotly para mantener la consola limpia
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # --- INICIALIZACIÓN DE LA APLICACIÓN ---
 app = Flask(__name__)
@@ -54,7 +58,7 @@ coordenadas_rd = {
 @app.route('/')
 def index():
     if df_global.empty:
-        return "<h1>Error Crítico</h1><p>No se pudieron cargar los datos desde la base de datos. Revisa los logs del servidor para más detalles.</p>"
+        return "<h1>Error Crítico</h1><p>No se pudieron cargar los datos desde la base de datos. Revisa los logs del servidor.</p>"
 
     # Lógica de Filtros
     selected_depto = request.args.get('departamento', 'Todos')
@@ -89,23 +93,27 @@ def index():
     if selected_año != 'Todos':
         df_filtrado = df_filtrado[df_filtrado['Año'] == int(selected_año)]
     
-    # Generar el resto de los gráficos y KPIs
     kpis, pie_chart_div, keyword_chart_div, map_div = generar_graficos_filtrados(df_filtrado)
         
-    # Preparar el texto de análisis
+    # Texto de Análisis
     texto_analitico = f"""
-        <h5 class="card-title mb-3">Análisis de Hallazgos</h5>
-        <p class="card-text small">El presente análisis se fundamenta en un corpus de <strong>{len(df_global)} sentencias</strong>. De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se observa una tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>.</p>
-        <p class="card-text small">La argumentación jurídica se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una baja incidencia de terminología de género explícita, sugiriendo que las decisiones se fundamentan predominantemente en la dogmática laboral tradicional.</p>
+        <h5 class="card-title mb-3">Análisis de Hallazgos Jurisprudenciales</h5>
+        <h6>I. Introducción y Metodología</h6>
+        <p class="card-text small">El presente estudio analiza un corpus de <strong>{len(df_global)} sentencias</strong> de la SCJ (2011-2023). De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se detallan los siguientes patrones.</p>
+        <h6>II. Análisis Cuantitativo de Resultados</h6>
+        <p class="card-text small">Se observa una notoria y consistente tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong> a favor de la trabajadora, consolidando victorias de instancias inferiores.</p>
+        <h6>III. Análisis Cualitativo del Discurso Judicial</h6>
+        <p class="card-text small">El análisis de frecuencia de conceptos y de normativas citadas revela una clara <strong>predominancia del paradigma jurídico-laboral tradicional</strong>, con una baja incidencia de terminología de género explícita a lo largo de los años.</p>
     """
     
-    # Preparar las opciones para los menús desplegables
+    # Opciones para los filtros
     opciones_depto = ['Todos'] + sorted(df_global['Departamento_Judicial'].dropna().unique().tolist())
     opciones_resultado = ['Todos', 'Favorable', 'Desfavorable', 'Mixto / Otro']
     opciones_derecho = ['Todos'] + sorted(df_global['Tipo_Derecho'].dropna().unique().tolist())
     opciones_año = ['Todos'] + sorted(df_global['Año'].dropna().unique().tolist(), reverse=True)
 
-    return render_template('index.html', 
+    return render_template(
+        'index.html', 
         kpis=kpis, pie_chart_div=pie_chart_div, keyword_chart_div=keyword_chart_div, 
         trend_chart_div=trend_chart_div, map_div=map_div,
         analysis_text=texto_analitico,
@@ -116,27 +124,25 @@ def index():
     )
 
 def generar_graficos_filtrados(df_filtrado):
-    kpis = {}
-    conteo_categorias = df_filtrado['Categoria_Resultado'].value_counts()
     kpis = {
         "total": len(df_filtrado),
-        "favorables": conteo_categorias.get('Favorable', 0),
-        "porcentaje": round((conteo_categorias.get('Favorable', 0) / len(df_filtrado)) * 100, 1) if len(df_filtrado) > 0 else 0
+        "favorables": (df_filtrado['Categoria_Resultado'] == 'Favorable').sum(),
+        "porcentaje": round(((df_filtrado['Categoria_Resultado'] == 'Favorable').sum() / len(df_filtrado)) * 100, 1) if len(df_filtrado) > 0 else 0
     }
 
+    conteo_categorias = df_filtrado['Categoria_Resultado'].value_counts()
     pie_chart_div = "<h6>No hay datos para esta selección.</h6>"
     if not conteo_categorias.empty:
         pie_fig = px.pie(conteo_categorias, values=conteo_categorias.values, names=conteo_categorias.index, title='Proporción de Resultados', color_discrete_map={'Favorable':'#28a745', 'Desfavorable':'#dc3545', 'Mixto / Otro':'#ffc107'})
         pie_fig.update_layout(title_x=0.5, template="plotly_white", legend_title_text='Categoría', legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
         pie_chart_div = pie_fig.to_html(full_html=False)
 
-    columnas_lemas = [col for col in df_filtrado.columns if col.startswith('lema_')]
-    frecuencia_total = df_filtrado[columnas_lemas].sum().sort_values(ascending=False)
-    top_15_lemas = frecuencia_total[frecuencia_total > 0].head(15).sort_values(ascending=True)
+    columnas_lemas = [col for col in df_filtrado.columns if 'lema_' in col]
+    frecuencia_total = df_filtrado[columnas_lemas].sum().sort_values(ascending=False).head(15).sort_values(ascending=True)
     keyword_chart_div = "<h6>No hay datos para esta selección.</h6>"
-    if not top_15_lemas.empty:
-        top_15_lemas.index = top_15_lemas.index.str.replace('lema_', '').str.capitalize()
-        keyword_fig = px.bar(top_15_lemas, x=top_15_lemas.values, y=top_15_lemas.index, orientation='h', title='Top Conceptos Más Frecuentes', text_auto=True)
+    if not frecuencia_total.empty:
+        frecuencia_total.index = frecuencia_total.index.str.replace('lema_', '', regex=False).str.capitalize()
+        keyword_fig = px.bar(frecuencia_total, x=frecuencia_total.values, y=frecuencia_total.index, orientation='h', title='Top Conceptos Más Frecuentes', text_auto=True)
         keyword_fig.update_layout(xaxis_title=None, yaxis_title=None, title_x=0.5, template="plotly_white")
         keyword_fig.update_traces(marker_color='#17a2b8')
         keyword_chart_div = keyword_fig.to_html(full_html=False)
