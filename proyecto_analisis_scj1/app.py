@@ -19,8 +19,8 @@ try:
     
     # Creamos la categoría de resultado para los filtros y gráficos
     def categorizar_resultado(resultado):
-        if 'Favorable' in resultado: return 'Favorable'
-        elif 'Desfavorable' in resultado: return 'Desfavorable'
+        if 'Favorable' in str(resultado): return 'Favorable'
+        elif 'Desfavorable' in str(resultado): return 'Desfavorable'
         else: return 'Mixto / Otro'
     df_global['Categoria_Resultado'] = df_global['Resultado_Causa'].apply(categorizar_resultado)
 except FileNotFoundError:
@@ -35,7 +35,7 @@ coordenadas_rd = {
     "Puerto Plata": {"lat": 19.7808, "lon": -70.6871}, "La Altagracia": {"lat": 18.6148, "lon": -68.7077},
     "Espaillat": {"lat": 19.5000, "lon": -70.4167}, "San Juan": {"lat": 18.8052, "lon": -71.2334},
     "Barahona": {"lat": 18.2085, "lon": -71.0995}, "Azua": {"lat": 18.4533, "lon": -70.7347},
-    "Monseñor Nouel": {"lat": 18.9221, "lon": -70.3846}
+    "Monseñor Nouel": {"lat": 18.9221, "lon": -70.3846}, "San Francisco De Macorís": {"lat": 19.3079, "lon": -70.2547}
 }
 
 @app.route('/')
@@ -43,13 +43,13 @@ def index():
     if df_global is None:
         return "<h1>Error</h1><p>No se encontró el archivo 'analisis_final_definitivo.xlsx'.</p>"
 
-    # --- 1. LEER FILTROS (INCLUYENDO EL AÑO) ---
+    # --- 1. LEER FILTROS ---
     selected_depto = request.args.get('departamento', 'Todos')
     selected_resultado = request.args.get('resultado', 'Todos')
     selected_derecho = request.args.get('derecho', 'Todos')
     selected_año = request.args.get('año', 'Todos')
 
-    # --- 2. FILTRAR DATAFRAME BASE (para tendencias) ---
+    # --- 2. FILTRAR DATAFRAME BASE ---
     df_filtrado_base = df_global.copy()
     if selected_depto != 'Todos':
         df_filtrado_base = df_filtrado_base[df_filtrado_base['Departamento_Judicial'] == selected_depto]
@@ -61,7 +61,7 @@ def index():
     # --- 3. GENERAR GRÁFICO DE TENDENCIAS ---
     df_tendencia = df_filtrado_base.groupby('Año').agg(Total_Casos=('Archivo', 'count'), Casos_Favorables=('Categoria_Resultado', lambda x: (x == 'Favorable').sum())).reset_index()
     trend_chart_div = "<h6>No hay datos de tendencia para esta selección.</h6>"
-    if not df_tendencia.empty:
+    if not df_tendencia.empty and len(df_tendencia) > 1:
         df_tendencia['Tasa_Ganancia'] = round((df_tendencia['Casos_Favorables'] / df_tendencia['Total_Casos']) * 100, 1)
         trend_chart_fig = make_subplots(specs=[[{"secondary_y": True}]])
         trend_chart_fig.add_trace(go.Bar(x=df_tendencia['Año'], y=df_tendencia['Total_Casos'], name='Total de Casos', marker_color='#0d6efd', opacity=0.7), secondary_y=False)
@@ -69,18 +69,24 @@ def index():
         trend_chart_fig.update_layout(title_text='Evolución Anual de Casos y Tasa de Ganancia', title_x=0.5, template="plotly_white", legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5))
         trend_chart_fig.update_yaxes(title_text="Total de Casos", secondary_y=False)
         trend_chart_fig.update_yaxes(title_text="Tasa de Ganancia (%)", secondary_y=True)
-        trend_chart_fig.update_xaxes(type='category') # Tratamos el año como categoría para evitar comas
+        trend_chart_fig.update_xaxes(type='category')
         trend_chart_div = trend_chart_fig.to_html(full_html=False)
-
-    # --- 4. APLICAR FILTRO DE AÑO PARA EL RESTO DE ELEMENTOS ---
+    
+    # --- 4. APLICAR FILTRO DE AÑO PARA EL RESTO ---
     df_filtrado = df_filtrado_base.copy()
     if selected_año != 'Todos':
         df_filtrado = df_filtrado[df_filtrado['Año'] == int(selected_año)]
     
     # --- 5. GENERAR OTROS GRÁFICOS Y KPIS ---
     kpis, pie_chart_div, keyword_chart_div, map_div = generar_graficos_filtrados(df_filtrado)
-        
-    # --- 6. PREPARAR OPCIONES PARA LOS FILTROS ---
+
+    # --- 6. PREPARAR TEXTO Y OPCIONES PARA FILTROS ---
+    texto_analitico = f"""
+        <h5 class="card-title mb-3">Análisis de Hallazgos Jurisprudenciales</h5>
+        <p class="card-text small">El presente análisis se fundamenta en un corpus de <strong>{df_global.shape[0]} sentencias</strong> de la SCJ (2011-2023). De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se detallan los siguientes patrones:</p>
+        <p class="card-text small">Se observa una tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>. La argumentación jurídica se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una baja incidencia de terminología de género explícita.</p>
+    """
+    
     opciones_depto = ['Todos'] + sorted(df_global['Departamento_Judicial'].unique().tolist())
     opciones_resultado = ['Todos', 'Favorable', 'Desfavorable', 'Mixto / Otro']
     opciones_derecho = ['Todos'] + sorted(df_global['Tipo_Derecho'].unique().tolist())
@@ -89,27 +95,27 @@ def index():
     return render_template('index.html', 
         kpis=kpis, pie_chart_div=pie_chart_div, keyword_chart_div=keyword_chart_div, 
         trend_chart_div=trend_chart_div, map_div=map_div,
+        analysis_text=texto_analitico, # <-- La única pieza que faltaba
         opciones_depto=opciones_depto, selected_depto=selected_depto,
         opciones_resultado=opciones_resultado, selected_resultado=selected_resultado,
         opciones_derecho=opciones_derecho, selected_derecho=selected_derecho,
-        opciones_año=opciones_año, selected_año=selected_año)
+        opciones_año=opciones_año, selected_año=selected_año
+    )
 
 def generar_graficos_filtrados(df_filtrado):
-    # KPIs
+    kpis = {}
     conteo_categorias = df_filtrado['Categoria_Resultado'].value_counts()
     total_sentencias = len(df_filtrado)
     casos_favorables = conteo_categorias.get('Favorable', 0)
     ganancia_porcentaje = round((casos_favorables / total_sentencias) * 100, 1) if total_sentencias > 0 else 0
     kpis = {"total": total_sentencias, "favorables": casos_favorables, "porcentaje": ganancia_porcentaje}
 
-    # Gráfico de Pastel
     pie_chart_div = "<h6>No hay datos para esta selección.</h6>"
     if not conteo_categorias.empty:
         pie_fig = px.pie(conteo_categorias, values=conteo_categorias.values, names=conteo_categorias.index, title='Proporción de Resultados', color_discrete_map={'Favorable':'#28a745', 'Desfavorable':'#dc3545', 'Mixto / Otro':'#ffc107'})
         pie_fig.update_layout(title_x=0.5, template="plotly_white", legend_title_text='Categoría', legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
         pie_chart_div = pie_fig.to_html(full_html=False)
 
-    # Gráfico de Barras de Conceptos
     columnas_lemas = [col for col in df_filtrado.columns if col.startswith('lema_')]
     frecuencia_total = df_filtrado[columnas_lemas].sum().sort_values(ascending=False)
     top_15_lemas = frecuencia_total[frecuencia_total > 0].head(15).sort_values(ascending=True)
@@ -120,8 +126,7 @@ def generar_graficos_filtrados(df_filtrado):
         keyword_fig.update_layout(xaxis_title=None, yaxis_title=None, title_x=0.5, template="plotly_white")
         keyword_fig.update_traces(marker_color='#17a2b8')
         keyword_chart_div = keyword_fig.to_html(full_html=False)
-
-    # Mapa de Burbujas
+    
     conteo_demarcaciones = df_filtrado[df_filtrado['Departamento_Judicial'] != 'No Especificado']['Departamento_Judicial'].value_counts().reset_index()
     conteo_demarcaciones.columns = ['Departamento', 'Cantidad']
     conteo_demarcaciones['lat'] = conteo_demarcaciones['Departamento'].map(lambda d: coordenadas_rd.get(d, {}).get('lat'))
