@@ -7,13 +7,10 @@ from plotly.subplots import make_subplots
 from sqlalchemy import create_engine
 import warnings
 
-# Ignoramos advertencias de Plotly para mantener la consola limpia
 warnings.filterwarnings("ignore", category=FutureWarning)
-
-# --- INICIALIZACIÓN DE LA APLICACIÓN ---
 app = Flask(__name__)
 
-# --- CONFIGURACIÓN Y CARGA DE DATOS DESDE LA BASE DE DATOS ---
+# --- CONFIGURACIÓN Y CARGA DE DATOS ---
 db_engine = None
 df_global = pd.DataFrame()
 
@@ -33,7 +30,7 @@ try:
     else:
         print(">>> ERROR CRÍTICO: La variable de entorno DATABASE_URL no está definida.")
 except Exception as e:
-    print(f">>> ERROR AL CONECTAR O CARGAR DATOS DESDE LA BASE DE DATOS: {e}")
+    print(f">>> ERROR AL CONECTAR O CARGAR DATOS: {e}")
 
 coordenadas_rd = {
     "Distrito Nacional": {"lat": 18.4861, "lon": -69.9312}, "Santiago": {"lat": 19.4517, "lon": -70.6970},
@@ -86,11 +83,20 @@ def index():
     
     kpis, pie_chart_div, keyword_chart_div, map_div = generar_graficos_filtrados(df_filtrado)
         
-    # Texto de Análisis
+    # --- TEXTO ANALÍTICO PROFESIONAL ---
     texto_analitico = f"""
         <h5 class="card-title mb-3">Análisis de Hallazgos Jurisprudenciales</h5>
-        <p class="card-text small">El presente estudio analiza un corpus de <strong>{len(df_global)} sentencias</strong> de la SCJ (2011-2023). De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se detallan los siguientes patrones.</p>
-        <p class="card-text small">Se observa una tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>. La argumentación jurídica se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una baja incidencia de terminología de género explícita.</p>
+        <h6>I. Introducción y Metodología</h6>
+        <p class="card-text small">El presente estudio analiza un corpus de <strong>{len(df_global)} sentencias</strong> de la SCJ (2011-2023) en materia laboral con mujeres como demandantes. La metodología empleó la extracción automatizada de texto y técnicas de Procesamiento de Lenguaje Natural (NLP) para la clasificación de decisiones y el análisis temático.</p>
+        
+        <h6>II. Análisis Cuantitativo de Resultados</h6>
+        <p class="card-text small">De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se observa una notoria tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>. Es crucial matizar que una porción significativa de estas victorias se materializa por la desestimación de recursos por razones procesales (inadmisibilidad, caducidad), consolidando así decisiones de instancias inferiores.</p>
+        
+        <h6>III. Análisis Cualitativo del Discurso Judicial</h6>
+        <p class="card-text small">El análisis de frecuencia de conceptos revela una <strong>predominancia del paradigma jurídico-laboral tradicional</strong>. La argumentación se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una incidencia consistentemente baja de terminología de género explícita a lo largo de los años.</p>
+
+        <h6>IV. Conclusión e Hipótesis</h6>
+        <p class="card-text small">Los datos presentan una dualidad: una alta eficacia judicial a favor de las mujeres, que coexiste con una baja visibilidad de un discurso de género explícito. La protección se otorga en base al rol de "trabajadora", abriendo la interrogante para futuras investigaciones sobre la aplicación implícita de un enfoque de género.</p>
     """
     
     # Opciones para los filtros
@@ -117,9 +123,9 @@ def generar_graficos_filtrados(df_filtrado):
         "porcentaje": round(((df_filtrado['Categoria_Resultado'] == 'Favorable').sum() / len(df_filtrado)) * 100, 1) if len(df_filtrado) > 0 else 0
     }
 
-    conteo_categorias = df_filtrado['Categoria_Resultado'].value_counts()
     pie_chart_div = "<h6>No hay datos para esta selección.</h6>"
-    if not conteo_categorias.empty:
+    if not df_filtrado.empty:
+        conteo_categorias = df_filtrado['Categoria_Resultado'].value_counts()
         pie_fig = px.pie(conteo_categorias, values=conteo_categorias.values, names=conteo_categorias.index, title='Proporción de Resultados', color_discrete_map={'Favorable':'#28a745', 'Desfavorable':'#dc3545', 'Mixto / Otro':'#ffc107'})
         pie_fig.update_layout(title_x=0.5, template="plotly_white", legend_title_text='Categoría', legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
         pie_chart_div = pie_fig.to_html(full_html=False)
@@ -127,7 +133,8 @@ def generar_graficos_filtrados(df_filtrado):
     columnas_lemas = [col for col in df_filtrado.columns if 'lema_' in col]
     frecuencia_total = df_filtrado[columnas_lemas].sum().sort_values(ascending=False).head(15).sort_values(ascending=True)
     keyword_chart_div = "<h6>No hay datos para esta selección.</h6>"
-    if not frecuencia_total.empty:
+    if not frecuencia_total[frecuencia_total > 0].empty:
+        frecuencia_total = frecuencia_total[frecuencia_total > 0]
         frecuencia_total.index = frecuencia_total.index.str.replace('lema_', '', regex=False).str.capitalize()
         keyword_fig = px.bar(frecuencia_total, x=frecuencia_total.values, y=frecuencia_total.index, orientation='h', title='Top Conceptos Más Frecuentes', text_auto=True)
         keyword_fig.update_layout(xaxis_title=None, yaxis_title=None, title_x=0.5, template="plotly_white")
@@ -141,9 +148,7 @@ def generar_graficos_filtrados(df_filtrado):
     conteo_demarcaciones.dropna(subset=['lat', 'lon'], inplace=True)
     map_div = "<h6>No hay datos geográficos para esta selección.</h6>"
     if not conteo_demarcaciones.empty:
-        # ===== ¡AQUÍ ESTÁ LA CORRECCIÓN! =====
-        # Usamos scatter_mapbox, que es más estable
-        map_fig = px.scatter_mapbox(conteo_demarcaciones, lat="lat", lon="lon", size="Cantidad", color="Cantidad", hover_name="Departamento", hover_data={"lat": False, "lon": False, "Cantidad": True}, color_continuous_scale=px.colors.sequential.Plasma, size_max=50, title="Distribución Geográfica de Casos")
+        map_fig = px.scatter_map(conteo_demarcaciones, lat="lat", lon="lon", size="Cantidad", color="Cantidad", hover_name="Departamento", hover_data={"lat": False, "lon": False, "Cantidad": True}, color_continuous_scale=px.colors.sequential.Plasma, size_max=50, title="Distribución Geográfica de Casos")
         map_fig.update_layout(mapbox_style="carto-positron", mapbox_center_lat=18.7357, mapbox_center_lon=-70.1627, mapbox_zoom=7.5, margin={"r":0,"t":40,"l":0,"b":0}, title_x=0.5)
         map_div = map_fig.to_html(full_html=False)
         
