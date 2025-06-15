@@ -1,32 +1,45 @@
+import os
 from flask import Flask, render_template, request
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import os
+from sqlalchemy import create_engine
 
+# --- INICIALIZACIÓN DE LA APLICACIÓN ---
 app = Flask(__name__)
 
-# --- Carga de datos y preparación ---
-try:
-    # Leemos el archivo de Excel definitivo y correcto
-    df_global = pd.read_excel("analisis_final_definitivo.xlsx")
-    
-    # Aseguramos que la columna 'Año' sea tratada correctamente
-    df_global['Año'] = pd.to_numeric(df_global['Año'], errors='coerce')
-    df_global.dropna(subset=['Año'], inplace=True)
-    df_global['Año'] = df_global['Año'].astype(int)
-    
-    # Creamos la categoría de resultado para los filtros y gráficos
-    def categorizar_resultado(resultado):
-        if 'Favorable' in str(resultado): return 'Favorable'
-        elif 'Desfavorable' in str(resultado): return 'Desfavorable'
-        else: return 'Mixto / Otro'
-    df_global['Categoria_Resultado'] = df_global['Resultado_Causa'].apply(categorizar_resultado)
-except FileNotFoundError:
-    df_global = None
+# --- CONFIGURACIÓN Y CARGA DE DATOS DESDE LA BASE DE DATOS ---
+db_engine = None
+df_global = pd.DataFrame() # Creamos un DataFrame vacío por si falla la conexión
 
-# Diccionario de coordenadas (no cambia)
+try:
+    # Lee la URL desde la variable de entorno que configuraremos en Render
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    
+    if DATABASE_URL:
+        # Creamos el motor de conexión a la base de datos
+        db_engine = create_engine(DATABASE_URL)
+        
+        # Leemos todos los datos de la tabla 'sentencias' una sola vez al iniciar
+        df_global = pd.read_sql("SELECT * FROM sentencias", db_engine)
+        
+        # Preparamos las columnas que necesitamos para los filtros y gráficos
+        df_global['Año'] = pd.to_numeric(df_global['Año'], errors='coerce').astype('Int64')
+        def categorizar_resultado(resultado):
+            if 'Favorable' in str(resultado): return 'Favorable'
+            elif 'Desfavorable' in str(resultado): return 'Desfavorable'
+            else: return 'Mixto / Otro'
+        df_global['Categoria_Resultado'] = df_global['Resultado_Causa'].apply(categorizar_resultado)
+        print(">>> Conexión a la BD y carga de datos inicial exitosa.")
+    else:
+        # Esto se mostrará en los logs de Render si la variable no está configurada
+        print(">>> ERROR CRÍTICO: La variable de entorno DATABASE_URL no está definida.")
+
+except Exception as e:
+    print(f">>> ERROR AL CONECTAR O CARGAR DATOS DESDE LA BASE DE DATOS: {e}")
+
+# Diccionario de coordenadas
 coordenadas_rd = {
     "Distrito Nacional": {"lat": 18.4861, "lon": -69.9312}, "Santiago": {"lat": 19.4517, "lon": -70.6970},
     "Santo Domingo": {"lat": 18.5001, "lon": -69.8887}, "La Vega": {"lat": 19.2240, "lon": -70.5287},
@@ -40,16 +53,15 @@ coordenadas_rd = {
 
 @app.route('/')
 def index():
-    if df_global is None:
-        return "<h1>Error</h1><p>No se encontró el archivo 'analisis_final_definitivo.xlsx'.</p>"
+    if df_global.empty:
+        return "<h1>Error Crítico</h1><p>No se pudieron cargar los datos desde la base de datos. Revisa los logs del servidor para más detalles.</p>"
 
-    # --- 1. LEER FILTROS ---
+    # Lógica de Filtros
     selected_depto = request.args.get('departamento', 'Todos')
     selected_resultado = request.args.get('resultado', 'Todos')
     selected_derecho = request.args.get('derecho', 'Todos')
     selected_año = request.args.get('año', 'Todos')
 
-    # --- 2. FILTRAR DATAFRAME BASE ---
     df_filtrado_base = df_global.copy()
     if selected_depto != 'Todos':
         df_filtrado_base = df_filtrado_base[df_filtrado_base['Departamento_Judicial'] == selected_depto]
@@ -58,7 +70,7 @@ def index():
     if selected_derecho != 'Todos':
         df_filtrado_base = df_filtrado_base[df_filtrado_base['Tipo_Derecho'] == selected_derecho]
     
-    # --- 3. GENERAR GRÁFICO DE TENDENCIAS ---
+    # Generación de Gráfico de Tendencias
     df_tendencia = df_filtrado_base.groupby('Año').agg(Total_Casos=('Archivo', 'count'), Casos_Favorables=('Categoria_Resultado', lambda x: (x == 'Favorable').sum())).reset_index()
     trend_chart_div = "<h6>No hay datos de tendencia para esta selección.</h6>"
     if not df_tendencia.empty and len(df_tendencia) > 1:
@@ -72,30 +84,31 @@ def index():
         trend_chart_fig.update_xaxes(type='category')
         trend_chart_div = trend_chart_fig.to_html(full_html=False)
     
-    # --- 4. APLICAR FILTRO DE AÑO PARA EL RESTO ---
+    # Aplicar filtro de Año para el resto de elementos
     df_filtrado = df_filtrado_base.copy()
     if selected_año != 'Todos':
         df_filtrado = df_filtrado[df_filtrado['Año'] == int(selected_año)]
     
-    # --- 5. GENERAR OTROS GRÁFICOS Y KPIS ---
+    # Generar el resto de los gráficos y KPIs
     kpis, pie_chart_div, keyword_chart_div, map_div = generar_graficos_filtrados(df_filtrado)
-
-    # --- 6. PREPARAR TEXTO Y OPCIONES PARA FILTROS ---
+        
+    # Preparar el texto de análisis
     texto_analitico = f"""
-        <h5 class="card-title mb-3">Análisis de Hallazgos Jurisprudenciales</h5>
-        <p class="card-text small">El presente análisis se fundamenta en un corpus de <strong>{df_global.shape[0]} sentencias</strong> de la SCJ (2011-2023). De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se detallan los siguientes patrones:</p>
-        <p class="card-text small">Se observa una tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>. La argumentación jurídica se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una baja incidencia de terminología de género explícita.</p>
+        <h5 class="card-title mb-3">Análisis de Hallazgos</h5>
+        <p class="card-text small">El presente análisis se fundamenta en un corpus de <strong>{len(df_global)} sentencias</strong>. De las <strong>{kpis['total']} sentencias</strong> que cumplen los criterios de filtrado, se observa una tasa de <strong>"ganancia de causa" del {kpis['porcentaje']}%</strong>.</p>
+        <p class="card-text small">La argumentación jurídica se basa fuertemente en el <strong>Código de Trabajo y la Ley 87-01</strong>, con una baja incidencia de terminología de género explícita, sugiriendo que las decisiones se fundamentan predominantemente en la dogmática laboral tradicional.</p>
     """
     
-    opciones_depto = ['Todos'] + sorted(df_global['Departamento_Judicial'].unique().tolist())
+    # Preparar las opciones para los menús desplegables
+    opciones_depto = ['Todos'] + sorted(df_global['Departamento_Judicial'].dropna().unique().tolist())
     opciones_resultado = ['Todos', 'Favorable', 'Desfavorable', 'Mixto / Otro']
-    opciones_derecho = ['Todos'] + sorted(df_global['Tipo_Derecho'].unique().tolist())
-    opciones_año = ['Todos'] + sorted(df_global['Año'].unique().tolist(), reverse=True)
+    opciones_derecho = ['Todos'] + sorted(df_global['Tipo_Derecho'].dropna().unique().tolist())
+    opciones_año = ['Todos'] + sorted(df_global['Año'].dropna().unique().tolist(), reverse=True)
 
     return render_template('index.html', 
         kpis=kpis, pie_chart_div=pie_chart_div, keyword_chart_div=keyword_chart_div, 
         trend_chart_div=trend_chart_div, map_div=map_div,
-        analysis_text=texto_analitico, # <-- La única pieza que faltaba
+        analysis_text=texto_analitico,
         opciones_depto=opciones_depto, selected_depto=selected_depto,
         opciones_resultado=opciones_resultado, selected_resultado=selected_resultado,
         opciones_derecho=opciones_derecho, selected_derecho=selected_derecho,
@@ -105,10 +118,11 @@ def index():
 def generar_graficos_filtrados(df_filtrado):
     kpis = {}
     conteo_categorias = df_filtrado['Categoria_Resultado'].value_counts()
-    total_sentencias = len(df_filtrado)
-    casos_favorables = conteo_categorias.get('Favorable', 0)
-    ganancia_porcentaje = round((casos_favorables / total_sentencias) * 100, 1) if total_sentencias > 0 else 0
-    kpis = {"total": total_sentencias, "favorables": casos_favorables, "porcentaje": ganancia_porcentaje}
+    kpis = {
+        "total": len(df_filtrado),
+        "favorables": conteo_categorias.get('Favorable', 0),
+        "porcentaje": round((conteo_categorias.get('Favorable', 0) / len(df_filtrado)) * 100, 1) if len(df_filtrado) > 0 else 0
+    }
 
     pie_chart_div = "<h6>No hay datos para esta selección.</h6>"
     if not conteo_categorias.empty:
