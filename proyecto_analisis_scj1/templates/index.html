@@ -13,6 +13,7 @@
         .kpi-card .icon { font-size: 3rem; opacity: 0.3; }
         .card { border: none; box-shadow: 0 4px 8px rgba(0,0,0,0.05); height: 100%;}
         .map-container { min-height: 600px; }
+        .analysis-text { line-height: 1.6; }
     </style>
 </head>
 <body>
@@ -48,6 +49,16 @@
         <div class="row mb-4">
             <div class="col-12">
                 <div class="card">
+                    <div class="card-body analysis-text">
+                        {{ analysis_text | safe }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
                     <div class="card-body">
                         {{ trend_chart_div | safe }}
                     </div>
@@ -72,7 +83,7 @@
     </main>
 
     <footer class="text-center text-muted py-4 mt-4">
-        <p>Sistema de Análisis de Datos v5.0 - Final</p>
+        <p>Sistema de Análisis de Datos Definitivo</p>
     </footer>
 </body>
 </html>
